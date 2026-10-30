@@ -1,0 +1,6 @@
+{
+  "name": "LPS Risk & Isolated System Manager",
+  "description": "Profesionální software pro řízení rizik R1-R4 podle ČSN EN 62305-2, dimenzování izolovaného hromosvodu HVI a generování Word protokolu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
