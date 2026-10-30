@@ -14,7 +14,9 @@ import {
   PvInstallationData,
   PvLpsEvaluation,
   SurroundingShieldingData,
-  SurroundingShieldingEvaluation
+  SurroundingShieldingEvaluation,
+  SpdEvaluation,
+  HeatmapZoneInfo
 } from '../types/lps';
 
 // Tolerovatelná rizika dle ČSN EN 62305-2 (Tabulka 4)
@@ -193,12 +195,39 @@ function calculateComponents(
     PTA = PTA * 0.1;
   }
 
-  // Pravděpodobnost vnitřního přepětí PSPD dle úrovně koordinované SPD (Tabulka B.3)
+  // Pravděpodobnost vnitřního přepětí PSPD dle úrovně koordinované SPD (Tabulka B.3 a ČSN EN 62305-4)
   let PSPD = 1.0;
   if (targetSpd === 'LPL_I') PSPD = 0.005;
   else if (targetSpd === 'LPL_II') PSPD = 0.01;
   else if (targetSpd === 'LPL_III') PSPD = 0.02;
   else if (targetSpd === 'LPL_IV') PSPD = 0.05;
+
+  // Zohlednění detailní konfigurace SPD přístroje a vícestupňové koordinace dle ČSN EN 62305-4
+  if (targetSpd !== 'none' && project.measures.spdConfig) {
+    const spd = project.measures.spdConfig;
+    if (spd.customPspd !== undefined && spd.customPspd > 0) {
+      PSPD = spd.customPspd;
+    } else {
+      // Koordinovaná kaskáda Typ 1 + 2 + 3 redukuje zbytkové napětí
+      if (spd.isCoordinatedCascade) {
+        PSPD = Math.max(0.001, PSPD * 0.5);
+      }
+      // Beznapěťové jiskřiště (spark gap) s nulovým zbytkovým proudem
+      if (spd.technology === 'spark_gap') {
+        PSPD = Math.max(0.001, PSPD * 0.85);
+      }
+      // Pokud je u objektu s vnějším LPS použit pouze Typ 2 (bez svodiče Typ 1 s vlnou 10/350), hrozí přetížení
+      if (spd.spdClassType === 'type_2' && targetLps !== 'none') {
+        PSPD = Math.min(0.5, PSPD * 6.0);
+      }
+      // Vliv ochranné napěťové hladiny Up
+      if (spd.up_kV > 0 && spd.up_kV <= 1.0) {
+        PSPD = Math.max(0.001, PSPD * 0.8);
+      } else if (spd.up_kV > 2.0) {
+        PSPD = Math.min(0.2, PSPD * 1.5);
+      }
+    }
+  }
 
   // Stínění (zahrnuje stínění mříží a útlum vlnového pole okolní zástavbou KMS dle ČSN EN 62305-4)
   let PMS = targetSpd !== 'none' ? PSPD : 1.0;
@@ -207,11 +236,14 @@ function calculateComponents(
   }
   PMS *= KmsFactor;
 
+  // Telekomunikační SPD redukce (kategorie D1/C2 dle ČSN EN 62305-4)
+  const telecomSpdFactor = (targetSpd !== 'none' && project.measures.spdConfig?.telecomSpdInstalled) ? 0.2 : 1.0;
+
   // Pravděpodobnosti přenosu po vedení
   const PU = lines.powerLineShielding === 'shielded' ? 0.2 * PTA : PTA;
   const PV = lines.powerLineShielding === 'shielded' ? 0.2 * PB : PB;
   const PW = lines.powerLineShielding === 'shielded' ? 0.2 * PSPD : PSPD;
-  const PZ = lines.powerLineShielding === 'shielded' ? 0.2 * PMS : PMS;
+  const PZ = (lines.telecomLineShielding === 'shielded' ? 0.2 * PMS : PMS) * telecomSpdFactor;
 
   // Ztrátové činitele
   const hz = Math.min(1.0, Math.max(0.01, zone.presenceHoursPerYear / 8760));
@@ -294,6 +326,7 @@ export function calculatePvEvaluation(
   if (!pv || !pv.enabled) {
     return {
       hasPv: false,
+      systemType: 'roof_residential',
       effectiveHeight_m: H,
       baseAd_m2,
       effectiveAd_m2: baseAd_m2,
@@ -313,6 +346,11 @@ export function calculatePvEvaluation(
       requiredSpdDC: 'Typ 2',
       requiredSpdAC: 'Typ 2',
       fireRiskEvaluation: 'ordinary',
+      minSpdVoltageUcpv_V: 1000,
+      isDualSpdRequired: false,
+      galvanicBondingDiameterMm: '6 mm² Cu',
+      pneStandardCompliance: 'Bez instalované FVE - normy pro výrobny se neuplatňují.',
+      recommendedSpdCatalogModel: 'Není požadováno',
       verdict: 'Na střeše objektu není evidována fotovoltaická instalace.',
       recommendations: ['V případě budoucí instalace FVE je nutné posoudit dodržení oddělovací vzdálenosti s.']
     };
@@ -326,6 +364,12 @@ export function calculatePvEvaluation(
   const panelCount = pv.panelCount || 24;
   const pvArea_m2 = pv.panelAreaM2 || Math.round(panelCount * 1.95 * 10) / 10;
   const roofCoveragePct = Math.min(100, Math.round((pvArea_m2 / Math.max(1, roofArea_m2)) * 1000) / 10);
+
+  // DC parametry stringů
+  const uoc = pv.stringVoltageUoc_V || 800; // [V]
+  const minSpdVoltageUcpv_V = Math.round(uoc * 1.2); // ČSN CLC/TS 50539-12 čl. 5.3: Ucpv ≥ 1.2 * Uoc_STC
+  const dcLength = pv.dcCableLength_m || 15; // [m]
+  const isDualSpdRequired = dcLength > 10; // ČSN CLC/TS 51643-32: Pokud je délka DC trasy > 10 m, vyžaduje se SPD na obou koncích
 
   // Výpočet dostatečné vzdálenosti s = ki * (kc / km) * l dle ČSN EN 62305-3 čl. 6.3
   const ki = getKi(lpsClass);
@@ -343,6 +387,9 @@ export function calculatePvEvaluation(
   const requiredBonding = isSeparationMaintained
     ? 'potential_equalization_6mm2_Cu'
     : 'direct_galvanic_16mm2_Cu';
+  const galvanicBondingDiameterMm = isSeparationMaintained
+    ? 'min. 6 mm² Cu (vyrovnání potenciálů)'
+    : 'min. 16 mm² Cu / FeZn 50 mm² (bleskový proud)';
 
   let requiredSpdDC: 'Typ 2' | 'Typ 1+2 (Iimp ≥ 12.5 kA)' | 'Typ 1+2 (Iimp ≥ 5 kA)' = 'Typ 2';
   if (!isSeparationMaintained) {
@@ -355,30 +402,64 @@ export function calculatePvEvaluation(
 
   const requiredSpdAC = isSeparationMaintained ? 'Typ 2' : 'Typ 1+2';
 
-  const fireRiskEvaluation = (!isSeparationMaintained || pv.dcCableRouting === 'unshielded_exterior')
+  const fireRiskEvaluation = (!isSeparationMaintained || pv.dcCableRouting === 'unshielded_exterior' || pv.dcCableLoopArea === 'large_loops')
     ? 'high'
     : 'ordinary';
+
+  // Doporučený katalogový model SPD dle Ucpv a typu
+  let recommendedSpdCatalogModel = '';
+  if (requiredSpdDC.includes('Typ 1+2')) {
+    if (minSpdVoltageUcpv_V <= 1000) {
+      recommendedSpdCatalogModel = 'DEHNcombo YPV SCI 1000 (Iimp = 12.5 kA, Ucpv = 1000 V) / SALTEK FLP-PV-1000 V';
+    } else if (minSpdVoltageUcpv_V <= 1200) {
+      recommendedSpdCatalogModel = 'DEHNcombo YPV SCI 1200 (Iimp = 12.5 kA, Ucpv = 1200 V) / SALTEK FLP-PV-1200 V';
+    } else {
+      recommendedSpdCatalogModel = 'DEHNcombo YPV SCI 1500 (Iimp = 12.5 kA, Ucpv = 1500 V) pro velká fotovoltaická pole';
+    }
+  } else {
+    if (minSpdVoltageUcpv_V <= 1000) {
+      recommendedSpdCatalogModel = 'DEHNguard M YPV SCI 1000 (In = 12.5 kA, Ucpv = 1000 V) / SALTEK SLP-PV-1000 V';
+    } else {
+      recommendedSpdCatalogModel = 'DEHNguard M YPV SCI 1200 / 1500 (In = 15 kA, Ucpv = 1500 V)';
+    }
+  }
+
+  // Posouzení shody s podnikovou normou PNE 33 0000-8 (připojování výroben FVE k distribuční soustavě ČEZ/E.GD/PRE)
+  let pneStandardCompliance = '';
+  if (isSeparationMaintained) {
+    pneStandardCompliance = 'PLNĚ VYHOVUJE PNE 33 0000-8: Hromosvod je v oddáleném provedení s dodržením vzdálenosti s. Konstrukce FVE pospojována PE min. 6 mm² Cu, DC a AC přepěťové ochrany splňují připojovací podmínky PDS.';
+  } else {
+    pneStandardCompliance = 'VYŽADUJE OPATŘENÍ DLE PNE 33 0000-8: Z důvodu nedodržení vzdálenosti s musí být rámy panelů galvanicky propojeny s hromosvodem (Cu min. 16 mm²) a na DC i AC straně musí být osazen kombinovaný svodič bleskových proudů Typ 1+2.';
+  }
 
   let verdict = '';
   const recommendations: string[] = [];
 
   if (isSeparationMaintained) {
-    verdict = `VYHOVUJE. Dostatečná vzdálenost s = ${s_cm} cm je dodržena (naměřeno d = ${d_cm} cm, rezerva +${(d_cm - s_cm).toFixed(1)} cm). Hromosvod je vůči FVE v oddáleném provedení.`;
+    verdict = `VYHOVUJE. Dostatečná vzdálenost s = ${s_cm} cm je dodržena (naměřeno d = ${d_cm} cm, bezpečná rezerva +${(d_cm - s_cm).toFixed(1)} cm). Hromosvod je vůči FVE v oddáleném provedení.`;
     recommendations.push('Na DC vstupu střídače a v AC rozváděči postačuje přepěťová ochrana Typ 2 (ČSN CLC/TS 51643-32).');
-    recommendations.push('Kovové nosné konstrukce FVE spojte ochranným pospojením s hlavní uzemňovací přípojnicí (PE vodičem Cu ≥ 6 mm²).');
+    recommendations.push(`Minimální předepsané provozní napětí DC svodiče činí Ucpv ≥ ${minSpdVoltageUcpv_V} V DC (1,2 × Uoc = ${uoc} V dle CLC/TS 50539-12).`);
+    recommendations.push('Kovové nosné konstrukce FVE spojte ochranným pospojením s hlavní uzemňovací přípojnicí vodičem PE Cu ≥ 6 mm².');
+    if (isDualSpdRequired) {
+      recommendations.push(`Délka DC trasy (${dcLength} m > 10 m): Dle normy ČSN CLC/TS 51643-32 čl. 5.3 je povinné osadit dvě sady SPD - jednu u střídače a druhou v podružném DC rozváděči u panelů na střeše!`);
+    }
     recommendations.push('Udržujte minimalizovanou plochu indukčních smyček vedením DC vodičů (+ a -) v těsném souběhu.');
   } else {
-    verdict = `NEVYHOVUJE! Dostatečná vzdálenost s = ${s_cm} cm NENÍ dodržena (skutečná vzdálenost d = ${d_cm} cm, deficit ${(s_cm - d_cm).toFixed(1)} cm). Vzniká bezprostřední nebezpečí elektrického přeskoku bleskového proudu na rámy FVE a do DC rozvodů!`;
-    recommendations.push(`POVINNÉ OPATŘENÍ: Proveďte přímé galvanické propojení nosné konstrukce a rámů FV panelů s jímací soustavou hromosvodu vodičem Cu ≥ 16 mm² nebo FeZn ≥ 50 mm² (ø 8 mm).`);
-    recommendations.push(`POVINNÁ OCHRANA SPD: Na vstupu DC vedení do budovy i na AC straně střídače musí být instalován koordinovaný kombinovaný svodič bleskových proudů a přepětí ${requiredSpdDC}.`);
+    verdict = `NEVYHOVUJE! Dostatečná vzdálenost s = ${s_cm} cm NENÍ dodržena (skutečná vzdálenost d = ${d_cm} cm, deficit ${(s_cm - d_cm).toFixed(1)} cm). Vzniká bezprostřední nebezpečí elektrického přeskoku bleskového proudu na rámy FVE a zavlečení výboje do objektu!`;
+    recommendations.push(`POVINNÉ OPATŘENÍ DLE ČSN EN 62305-3 Příloha U: Proveďte přímé galvanické propojení nosné konstrukce a rámů FV panelů s jímací soustavou hromosvodu vodičem Cu ≥ 16 mm² nebo FeZn ≥ 50 mm² (ø 8 mm).`);
+    recommendations.push(`POVINNÁ OCHRANA SPD: Na vstupu DC vedení do budovy i na AC straně střídače musí být instalován koordinovaný kombinovaný svodič bleskových proudů a přepětí ${requiredSpdDC} s Ucpv ≥ ${minSpdVoltageUcpv_V} V.`);
+    if (isDualSpdRequired) {
+      recommendations.push(`Délka DC vedení (${dcLength} m > 10 m): Je nutné osadit svodiče Typ 1+2 na obou koncích trasy (střešní DC box u panelů i u střídače).`);
+    }
     recommendations.push(`DOPORUČENÍ: Pro zachování odděleného hromosvodu zvažte úpravu polohy panelů, instalaci oddálených jímacích tyčí na vzpěrách DEHNiso, nebo použití izolovaného vysokonapěťového vodiče DEHN HVI.`);
     if (pv.dcCableRouting === 'unshielded_exterior') {
-      recommendations.push('Doporučujeme uložit DC kabely do uzemněného plechového stínicího žlabu k omezení indukce.');
+      recommendations.push('Doporučujeme uložit DC kabely do uzemněného plechového stínicího žlabu k omezení elektromagnetické indukce.');
     }
   }
 
   return {
     hasPv: true,
+    systemType: pv.systemType || 'roof_residential',
     effectiveHeight_m,
     baseAd_m2,
     effectiveAd_m2,
@@ -398,6 +479,11 @@ export function calculatePvEvaluation(
     requiredSpdDC,
     requiredSpdAC,
     fireRiskEvaluation,
+    minSpdVoltageUcpv_V,
+    isDualSpdRequired,
+    galvanicBondingDiameterMm,
+    pneStandardCompliance,
+    recommendedSpdCatalogModel,
     verdict,
     recommendations
   };
@@ -583,6 +669,388 @@ export function calculateSurroundingShielding(
     verdict,
     technicalNotes
   };
+}
+
+/**
+ * Podrobné posouzení parametrů svodičů bleskových proudů a přepětí (SPD)
+ * dle ČSN EN 62305-4 ed. 2 a ČSN CLC/TS 51643-32
+ */
+export function evaluateSpdProtection(project: LpsProjectState): SpdEvaluation {
+  const { measures } = project;
+  const spd = measures.spdConfig;
+  const lps = measures.lpsClass;
+
+  // Požadovaný impulsní bleskový proud Iimp dle třídy LPS (LPL) ČSN EN 62305-1 tab. 3 a 4
+  let requiredIimp = 12.5; // [kA] pro LPS III a IV
+  if (lps === 'I') requiredIimp = 25.0;
+  else if (lps === 'II') requiredIimp = 18.75;
+  else if (lps === 'none') requiredIimp = 5.0;
+
+  // Základní hodnota PSPD dle vybrané úrovně LPL (Tabulka B.3)
+  let nominalPspd = 1.0;
+  if (measures.spdLevel === 'LPL_I') nominalPspd = 0.005;
+  else if (measures.spdLevel === 'LPL_II') nominalPspd = 0.01;
+  else if (measures.spdLevel === 'LPL_III') nominalPspd = 0.02;
+  else if (measures.spdLevel === 'LPL_IV') nominalPspd = 0.05;
+
+  let effectivePspd = nominalPspd;
+  let isCoordinated = measures.spdLevel !== 'none';
+  let iimpAdequate = true;
+  let protectionLevelAdequate = true;
+  const recommendations: string[] = [];
+  const lpzBoundaries: string[] = [];
+
+  if (spd) {
+    if (spd.customPspd !== undefined && spd.customPspd > 0) {
+      effectivePspd = spd.customPspd;
+    } else {
+      // 1. Zkouška typu svodiče a bleskového proudu Iimp
+      if (lps !== 'none') {
+        if (spd.spdClassType === 'type_2' || spd.spdClassType === 'type_3') {
+          iimpAdequate = false;
+          effectivePspd = Math.min(0.5, nominalPspd * 6.0);
+          recommendations.push(
+            `Objekt má vnější LPS třídy ${lps}, na vstupu budovy (rozhraní LPZ 0A/1) je proto povinný svodič bleskových proudů Typ 1 nebo kombinovaný Typ 1+2 schopný svést proud s vlnou 10/350 µs!`
+          );
+        } else if (spd.iimp_kA < requiredIimp) {
+          iimpAdequate = false;
+          effectivePspd = Math.min(0.2, nominalPspd * (requiredIimp / Math.max(1, spd.iimp_kA)));
+          recommendations.push(
+            `Instalovaný bleskový proud Iimp = ${spd.iimp_kA} kA je nižší než normový požadavek pro LPS ${lps} (${requiredIimp} kA na pól dle ČSN EN 62305-1 tab. 3).`
+          );
+        }
+      }
+
+      // 2. Ochranná napěťová hladina Up
+      if (spd.up_kV > 1.5) {
+        protectionLevelAdequate = false;
+        effectivePspd = Math.min(0.2, effectivePspd * 1.4);
+        recommendations.push(
+          `Ochranná hladina Up = ${spd.up_kV} kV překračuje doporučenou mez 1,5 kV pro koncová zařízení kategorie přepětí II dle ČSN EN 60664-1.`
+        );
+      } else if (spd.up_kV <= 1.0) {
+        effectivePspd = Math.max(0.001, effectivePspd * 0.8);
+      }
+
+      // 3. Technologie - jiskřiště vs. varistory
+      if (spd.technology === 'spark_gap') {
+        effectivePspd = Math.max(0.001, effectivePspd * 0.85);
+      }
+
+      // 4. Koordinovaná kaskáda
+      if (spd.isCoordinatedCascade) {
+        effectivePspd = Math.max(0.001, effectivePspd * 0.5);
+        lpzBoundaries.push('LPZ 0A → LPZ 1 (Hlavní rozváděč RH: Typ 1+2)');
+        lpzBoundaries.push('LPZ 1 → LPZ 2 (Podružné rozváděče: Typ 2)');
+        lpzBoundaries.push('LPZ 2 → LPZ 3 (Zásuvková hnízda a IT: Typ 3)');
+      } else {
+        lpzBoundaries.push('LPZ 0A → LPZ 1 (Vstupní rozváděč RH)');
+      }
+
+      // 5. Telekomunikace
+      if (spd.telecomSpdInstalled) {
+        lpzBoundaries.push('LPZ 0B → LPZ 1 (Datové a telekomunikační vstupy D1/C2)');
+      }
+    }
+  } else {
+    // Výchozí stav dle spdLevel
+    if (measures.spdLevel !== 'none') {
+      lpzBoundaries.push('LPZ 0A → LPZ 1 (Vstupní koordinované SPD)');
+    }
+  }
+
+  effectivePspd = Math.round(effectivePspd * 10000) / 10000;
+  const riskReductionRatioPct = Math.round((1 - effectivePspd) * 1000) / 10;
+
+  isCoordinated = measures.spdLevel !== 'none' && iimpAdequate && protectionLevelAdequate;
+
+  let verdict = '';
+  if (measures.spdLevel === 'none') {
+    verdict = 'Objekt je bez koordinované ochrany před přepětím (PSPD = 1,0). Vnitřní elektrické a IT systémy jsou vysoce zranitelné.';
+    recommendations.push('Navrhněte osazení kombinovaného svodiče bleskových proudů a přepětí Typ 1+2 na vstupu do objektu.');
+  } else if (isCoordinated) {
+    verdict = `SPD soustava je plně koordinovaná dle ČSN EN 62305-4 (PSPD = ${effectivePspd}, redukce rizik přepětí o ${riskReductionRatioPct} %). Vnitřní systémy v LPZ 1 a LPZ 2 jsou spolehlivě chráněny.`;
+  } else {
+    verdict = `SPD soustava vykazuje dílčí neshody s normou ČSN EN 62305-4 (PSPD = ${effectivePspd}). Je nutné zkontrolovat parametry Iimp a koordinaci.`;
+  }
+
+  return {
+    isCoordinated,
+    effectivePspd,
+    nominalPspd,
+    riskReductionRatioPct,
+    requiredIimp_kA: requiredIimp,
+    iimpAdequate,
+    protectionLevelAdequate,
+    energyCoordinationVerdict: verdict,
+    lpzBoundariesProtected: lpzBoundaries,
+    recommendations
+  };
+}
+
+/**
+ * Výpočet zón budovy pro interaktivní prvek Risk Heatmap
+ * Rozděluje stavbu na 6 technických zón dle ČSN EN 62305-2 čl. 6
+ */
+export function calculateBuildingHeatmapZones(
+  project: LpsProjectState,
+  results: {
+    R1: number;
+    RT1: number;
+    componentsInitial: ComponentRisks;
+    componentsWithMeasures: ComponentRisks;
+    pvEvaluation?: PvLpsEvaluation;
+    spdEvaluation?: SpdEvaluation;
+    surroundingShielding?: SurroundingShieldingEvaluation;
+  }
+): HeatmapZoneInfo[] {
+  const { building, measures, isolatedLps } = project;
+  const cInit = results.componentsInitial;
+  const cCurr = results.componentsWithMeasures;
+  const RT = results.RT1;
+
+  const getStatus = (ratioPct: number): 'safe' | 'moderate' | 'elevated' | 'critical' => {
+    if (ratioPct <= 25) return 'safe';
+    if (ratioPct <= 60) return 'moderate';
+    if (ratioPct <= 95) return 'elevated';
+    return 'critical';
+  };
+
+  const getColor = (status: 'safe' | 'moderate' | 'elevated' | 'critical'): string => {
+    switch (status) {
+      case 'safe': return '#10b981';      // Emerald green
+      case 'moderate': return '#eab308';  // Amber yellow
+      case 'elevated': return '#f97316';  // Warm orange
+      case 'critical': return '#f43f5e';  // Rose red
+    }
+  };
+
+  // 1. ZÓNA 1: Střecha a nástavby
+  const roofInitPct = Math.round(((cInit.RA * 1.2 + cInit.RB * 1.5 + cInit.RC) / RT) * 100);
+  let roofMitPct = Math.round(((cCurr.RA * 1.2 + cCurr.RB * 1.5 + cCurr.RC) / RT) * 100);
+  if (results.pvEvaluation?.hasPv && !results.pvEvaluation.isSeparationMaintained) {
+    roofMitPct = Math.max(roofMitPct, 78); // Penalizace za nedodrženou oddělovací vzdálenost
+  }
+  const roofStatus = getStatus(roofMitPct);
+  const roofInitStatus = getStatus(roofInitPct);
+
+  const roofVulns: string[] = [];
+  if (measures.lpsClass === 'none') roofVulns.push('Chybí vnější jímací soustava na střeše');
+  if (results.pvEvaluation?.hasPv && !results.pvEvaluation.isSeparationMaintained) {
+    roofVulns.push('Porušena oddělovací vzdálenost s (d < s) u FVE panelů - nebezpečí přeskoku');
+  }
+  if (!isolatedLps.enabled && results.pvEvaluation?.hasPv) {
+    roofVulns.push('Chybí oddálený svod HVI pro technologické nástavby');
+  }
+
+  const roofProts: string[] = [];
+  if (measures.lpsClass !== 'none') roofProts.push(`Mřížová soustava LPS ${measures.lpsClass}`);
+  if (isolatedLps.enabled) roofProts.push(`Oddálený systém HVI (${isolatedLps.protectedEquipment})`);
+  if (results.pvEvaluation?.isSeparationMaintained) roofProts.push('Oddělovací vzdálenost d ≥ s dodržena');
+
+  // 2. ZÓNA 2: Fasáda a svody
+  const facadeInitPct = Math.round(((cInit.RA * 1.4 + cInit.RU * 0.8) / RT) * 100);
+  const facadeMitPct = Math.round(((cCurr.RA * 1.4 + cCurr.RU * 0.8) / RT) * 100);
+  const facadeStatus = getStatus(facadeMitPct);
+  const facadeInitStatus = getStatus(facadeInitPct);
+
+  const facadeVulns: string[] = [];
+  if (!measures.warningNotices && !isolatedLps.enabled) {
+    facadeVulns.push('Volně přístupné neizolované svody v dosahu osob (riziko dotykového napětí)');
+  }
+  const facadeProts: string[] = [];
+  if (measures.warningNotices) facadeProts.push('Výstražné tabulky a mechanické chráničky svodů');
+  if (isolatedLps.enabled) facadeProts.push('Izolované svody HVI s nulovým vnějším polem');
+
+  // 3. ZÓNA 3: Hlavní rozváděč RH
+  const swbInitPct = Math.round(((cInit.RV * 1.8 + cInit.RW * 1.5 + cInit.RU * 0.9) / RT) * 100);
+  const swbMitPct = Math.round(((cCurr.RV * 1.8 + cCurr.RW * 1.5 + cCurr.RU * 0.9) / RT) * 100);
+  const swbStatus = getStatus(swbMitPct);
+  const swbInitStatus = getStatus(swbInitPct);
+
+  const swbVulns: string[] = [];
+  if (measures.spdLevel === 'none') {
+    swbVulns.push('Chybí svodič bleskových proudů Typ 1 na vstupu do objektu');
+    swbVulns.push('Přímé riziko proražení izolace rozvodů NN vlnou 10/350 µs');
+  }
+  const swbProts: string[] = [];
+  if (measures.spdLevel !== 'none') swbProts.push(`Koordinované SPD ${measures.spdLevel}`);
+  if (measures.potentialEqualization) swbProts.push('Hlavní ekvipotenciální přípojnice MET');
+
+  // 4. ZÓNA 4: IT a řídicí systémy
+  const itInitPct = Math.round(((cInit.RC * 2.0 + cInit.RM * 1.8 + cInit.RZ * 1.2) / RT) * 100);
+  const itMitPct = Math.round(((cCurr.RC * 2.0 + cCurr.RM * 1.8 + cCurr.RZ * 1.2) / RT) * 100);
+  const itStatus = getStatus(itMitPct);
+  const itInitStatus = getStatus(itInitPct);
+
+  const itVulns: string[] = [];
+  if (!measures.shieldingMesh && measures.spdLevel === 'none') {
+    itVulns.push('Nechráněná indukční smyčka LEMP v datové kabeláži');
+    itVulns.push('Citlivé polovodičové řídicí obvody bez jemné ochrany Typ 3');
+  }
+  const itProts: string[] = [];
+  if (measures.shieldingMesh) itProts.push('Prostorové magnetické stínění armováním');
+  if (results.spdEvaluation?.isCoordinated) itProts.push('Jemná vícestupňová koordinace SPD');
+  if (results.surroundingShielding?.hasShielding) {
+    itProts.push(`Útlum vnějšího pole okolím (-${results.surroundingShielding.waveFieldAttenuation_dB} dB)`);
+  }
+
+  // 5. ZÓNA 5: Pobytové místnosti
+  const roomsInitPct = Math.round(((cInit.RB * 1.1 + cInit.RA * 0.6) / RT) * 100);
+  const roomsMitPct = Math.round(((cCurr.RB * 1.1 + cCurr.RA * 0.6) / RT) * 100);
+  const roomsStatus = getStatus(roomsMitPct);
+  const roomsInitStatus = getStatus(roomsInitPct);
+
+  const roomsVulns: string[] = [];
+  if (project.zone.panicRisk === 'high') roomsVulns.push('Vysoké riziko paniky při bouřce a výpadku světel');
+  if (project.zone.fireRisk === 'high') roomsVulns.push('Zvýšené požární zatížení hořlavými materiály');
+  const roomsProts: string[] = [];
+  if (project.zone.fireProtection !== 'none') roomsProts.push(`Požární ochrana: ${project.zone.fireProtection}`);
+
+  // 6. ZÓNA 6: Základy a zemnič
+  const earthInitPct = Math.round(((cInit.RA * 0.7 + cInit.RU * 1.1) / RT) * 100);
+  const earthMitPct = Math.round(((cCurr.RA * 0.7 + cCurr.RU * 1.1) / RT) * 100);
+  const earthStatus = getStatus(earthMitPct);
+  const earthInitStatus = getStatus(earthInitPct);
+
+  const earthVulns: string[] = [];
+  const soilRho = building.soilResistivity || 200;
+  if (soilRho > 400) {
+    earthVulns.push(`Vysoká rezistivita půdy (ρ = ${soilRho} Ω·m)`);
+  }
+  const earthProts: string[] = [
+    `Obvodový zemnič FeZn délky ${building.earthingLength || 2 * (building.length + building.width)} m`,
+    'Základové vyrovnání potenciálů'
+  ];
+
+  return [
+    {
+      id: 'zone_roof',
+      name: 'Střecha & technologické nástavby (FVE, VZT, antény)',
+      zoneCode: 'Z1-ROOF',
+      areaDescription: 'Střešní plášť, atika, hřeben, fotovoltaická pole a vzduchotechnické jednotky',
+      lpzBoundary: 'LPZ 0A / LPZ 0B',
+      floorLevel: `+${building.height} m (Střecha)`,
+      dominantRiskComponents: ['RA (přímý úder)', 'RB (požár krytiny)', 'RC (LEMP střešní kabeláž)'],
+      unmitigatedRiskPct: Math.max(15, roofInitPct),
+      mitigatedRiskPct: Math.max(2, roofMitPct),
+      status: roofStatus,
+      unmitigatedStatus: roofInitStatus,
+      color: getColor(roofStatus),
+      unmitigatedColor: getColor(roofInitStatus),
+      vulnerabilities: roofVulns.length > 0 ? roofVulns : ['Žádné kritické slabiny'],
+      appliedProtections: roofProts.length > 0 ? roofProts : ['Bez ochranných prvků'],
+      recommendedMeasures: [
+        'Udržovat oddělovací vzdálenost s mezi jímači a kovovými konstrukcemi',
+        'Provádět pravidelné revize spojů jímací sítě dle ČSN EN 62305-3'
+      ]
+    },
+    {
+      id: 'zone_facade',
+      name: 'Fasáda, vnější svody & okolí vstupů',
+      zoneCode: 'Z2-FACADE',
+      areaDescription: 'Obvodové stěny, vnější svodová vedení a pásmo ohrožení dotykovým napětím',
+      lpzBoundary: 'LPZ 0B vnější',
+      floorLevel: `0.0 až +${building.height} m`,
+      dominantRiskComponents: ['RA (dotykové napětí)', 'RU (krokové napětí)'],
+      unmitigatedRiskPct: Math.max(10, facadeInitPct),
+      mitigatedRiskPct: Math.max(2, facadeMitPct),
+      status: facadeStatus,
+      unmitigatedStatus: facadeInitStatus,
+      color: getColor(facadeStatus),
+      unmitigatedColor: getColor(facadeInitStatus),
+      vulnerabilities: facadeVulns.length > 0 ? facadeVulns : ['Žádné kritické slabiny'],
+      appliedProtections: facadeProts.length > 0 ? facadeProts : ['Standardní svodový drát'],
+      recommendedMeasures: [
+        'V místech pohybu osob instalovat výstražné tabulky a mechanické chráničky',
+        'U vstupních dveří zajistit asfaltovou nebo štěrkovou úpravu s vysokou rezistivitou'
+      ]
+    },
+    {
+      id: 'zone_main_switchboard',
+      name: 'Hlavní rozváděč NN & vstup inženýrských sítí',
+      zoneCode: 'Z3-MAIN-SWB',
+      areaDescription: 'Hlavní elektrorozvodna RH, přípojková skříň, vstup kabelů NN a telekomunikací',
+      lpzBoundary: 'LPZ 0A → LPZ 1',
+      floorLevel: '1.NP / Technický suterén',
+      dominantRiskComponents: ['RV (požár rozváděče)', 'RW (přepětí po síti)', 'RU (dotyk vedení)'],
+      unmitigatedRiskPct: Math.max(20, swbInitPct),
+      mitigatedRiskPct: Math.max(3, swbMitPct),
+      status: swbStatus,
+      unmitigatedStatus: swbInitStatus,
+      color: getColor(swbStatus),
+      unmitigatedColor: getColor(swbInitStatus),
+      vulnerabilities: swbVulns.length > 0 ? swbVulns : ['Vstup spolehlivě ošetřen'],
+      appliedProtections: swbProts.length > 0 ? swbProts : ['Bez ochranných prvků'],
+      recommendedMeasures: [
+        'Osadit kombinovaný svodič Typ 1+2 (Iimp ≥ 12,5 kA / 25 kA) v bezprostřední blízkosti vstupu kabelu',
+        'Propojit hlavní ochrannou svorkovnici PE s přípojnicí MET vodičem Cu min. 16 mm²'
+      ]
+    },
+    {
+      id: 'zone_it_server',
+      name: 'IT serverovna, řídicí systémy & MaR',
+      zoneCode: 'Z4-IT-ROOM',
+      areaDescription: 'Datové rozváděče, servery, EPS ústředna, MaR a citlivá elektronika',
+      lpzBoundary: 'LPZ 1 → LPZ 2 / LPZ 3',
+      floorLevel: '2.NP / IT centrum',
+      dominantRiskComponents: ['RC (LEMP indukce)', 'RM (magnetické pole)', 'RZ (datové linky)'],
+      unmitigatedRiskPct: Math.max(15, itInitPct),
+      mitigatedRiskPct: Math.max(2, itMitPct),
+      status: itStatus,
+      unmitigatedStatus: itInitStatus,
+      color: getColor(itStatus),
+      unmitigatedColor: getColor(itInitStatus),
+      vulnerabilities: itVulns.length > 0 ? itVulns : ['Citlivá elektronika zabezpečena'],
+      appliedProtections: itProts.length > 0 ? itProts : ['Základní jištění'],
+      recommendedMeasures: [
+        'Aplikovat jemné svodiče přepětí Typ 3 (Up ≤ 1,0 kV) u napájení serverů a switchů',
+        'Uložit datové rozvody do uzavřených plechových stínicích žlabů'
+      ]
+    },
+    {
+      id: 'zone_occupied_rooms',
+      name: 'Pobytové místnosti, kanceláře & shromažďovací prostory',
+      zoneCode: 'Z5-OFFICES',
+      areaDescription: 'Kanceláře, zasedací místnosti, chodby a evakuační cesty',
+      lpzBoundary: 'LPZ 1 vnitřní',
+      floorLevel: `1.NP až ${Math.max(1, Math.round(building.height / 3.5))}.NP`,
+      dominantRiskComponents: ['RB (požár a kouř)', 'RA (panika osob)', 'RV (sekundární požár)'],
+      unmitigatedRiskPct: Math.max(10, roomsInitPct),
+      mitigatedRiskPct: Math.max(2, roomsMitPct),
+      status: roomsStatus,
+      unmitigatedStatus: roomsInitStatus,
+      color: getColor(roomsStatus),
+      unmitigatedColor: getColor(roomsInitStatus),
+      vulnerabilities: roomsVulns.length > 0 ? roomsVulns : ['Minimální zbytková rizika'],
+      appliedProtections: roomsProts.length > 0 ? roomsProts : ['Standardní stavební provedení'],
+      recommendedMeasures: [
+        'Udržovat volné únikové cesty a funkční nouzové osvětlení',
+        'Pravidelně kontrolovat hasicí přístroje a hlásiče kouře'
+      ]
+    },
+    {
+      id: 'zone_foundation_earth',
+      name: 'Základy, obvodový zemnič & vyrovnání potenciálů',
+      zoneCode: 'Z6-EARTHING',
+      areaDescription: 'Základová spára, FeZn obvodový zemnič typu B a přípojnice pospojování',
+      lpzBoundary: 'Podzemní LPZ 0A / uzemnění',
+      floorLevel: '-1.2 m (Základy)',
+      dominantRiskComponents: ['RA (krokové napětí)', 'RU (potenciál zemniče)'],
+      unmitigatedRiskPct: Math.max(10, earthInitPct),
+      mitigatedRiskPct: Math.max(2, earthMitPct),
+      status: earthStatus,
+      unmitigatedStatus: earthInitStatus,
+      color: getColor(earthStatus),
+      unmitigatedColor: getColor(earthInitStatus),
+      vulnerabilities: earthVulns.length > 0 ? earthVulns : ['Zemnič vyhovuje požadavkům'],
+      appliedProtections: earthProts,
+      recommendedMeasures: [
+        'Dodržet normový zemní odpor R ≤ 10 Ω pro frekvenci blesku',
+        'Při vysoké rezistivitě půdy doplnit svislé tyčové stroje FeZn / Cu'
+      ]
+    }
+  ];
 }
 
 /**
@@ -781,6 +1249,20 @@ export function calculateLpsProject(project: LpsProjectState): CalculationResult
   // Odhad zemního odporu pro obvodový zemnič R approx = 2 * rho / L_e
   const estimatedEarthResistance_ohm = Math.round((2 * rho / Math.max(10, actualEarthingLength_m)) * 10) / 10;
 
+  // Vyhodnocení svodičů bleskových proudů a přepětí (SPD) dle ČSN EN 62305-4
+  const spdEvaluation = evaluateSpdProtection(project);
+
+  // Výpočet zón budovy pro interaktivní prvek Risk Heatmap
+  const heatmapZones = calculateBuildingHeatmapZones(project, {
+    R1: withMeasures.R1,
+    RT1: RT1_LIMIT,
+    componentsInitial: initial.components,
+    componentsWithMeasures: withMeasures.components,
+    pvEvaluation,
+    spdEvaluation,
+    surroundingShielding
+  });
+
   return {
     Ad: Math.round(Ad * 10) / 10,
     Am: Math.round(Am * 10) / 10,
@@ -844,6 +1326,9 @@ export function calculateLpsProject(project: LpsProjectState): CalculationResult
     estimatedEarthResistance_ohm,
 
     pvEvaluation,
-    surroundingShielding
+    surroundingShielding,
+
+    spdEvaluation,
+    heatmapZones
   };
 }

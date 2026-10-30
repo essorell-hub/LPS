@@ -26,8 +26,11 @@ export type PvMountingType = 'pitched_coplanar' | 'flat_elevated' | 'integrated_
 export type PvDcRoutingType = 'metal_shielded_tray' | 'unshielded_exterior' | 'interior_shaft';
 export type PvInverterLocation = 'exterior_roof' | 'attic_under_roof' | 'technical_room_ground' | 'cellar';
 
+export type PvSystemType = 'roof_residential' | 'roof_commercial' | 'ground_mounted_freestanding' | 'ground_mounted_tracker' | 'bipv_facade';
+
 export interface PvInstallationData {
   enabled: boolean;
+  systemType?: PvSystemType;     // Typ instalace (rezidenční střecha, komerční, pozemní volně stojící...)
   powerKwp: number;              // Výkon FVE [kWp] např. 10 kWp
   panelCount: number;            // Počet panelů, např. 24
   panelAreaM2?: number;          // Celková plocha panelů [m²]
@@ -42,6 +45,14 @@ export interface PvInstallationData {
   downConductorCount: number;    // Počet svodů (pro kc: 1, 2, 4+)
   customKc?: number;
   dielectricMedium: 'air' | 'solid'; // km (vzduch = 1.0, zedivo/izolant = 0.5)
+
+  // Pokročilé elektrotechnické DC parametry dle ČSN EN 62305-3 Příloha U & CLC/TS 50539-12
+  stringVoltageUoc_V?: number;   // Napětí stringu naprázdno Uoc_STC [V] (např. 600 V, 800 V, 1000 V, 1500 V)
+  stringCount?: number;          // Počet DC stringů připojených k MPPT
+  stringIsc_A?: number;          // Zkratový proud stringu Isc_STC [A] (např. 13.5 A)
+  dcCableLength_m?: number;      // Délka DC vedení od panelů ke střídači [m] (> 10 m vyžaduje duální SPD)
+  hasDcSwitchNearInverter?: boolean; // DC odpínač v dosahu střídače
+  pvSpdModelPreset?: string;     // Model doporučeného DC svodiče
 }
 
 export interface BuildingData {
@@ -103,6 +114,57 @@ export interface ZoneData {
   publicServiceType: 'none' | 'water_gas' | 'hospital' | 'telecom_power'; // pro R2
 }
 
+export type SpdClassType = 'type_1' | 'type_1_plus_2' | 'type_2' | 'type_2_plus_3' | 'type_3';
+export type SpdTechnologyType = 'spark_gap' | 'varistor_mov' | 'hybrid_gap_mov';
+export type SpdNetworkConfiguration = 'TN-C' | 'TN-S' | 'TT' | 'IT';
+
+export interface SpdDetailedConfig {
+  spdClassType: SpdClassType;
+  technology: SpdTechnologyType;
+  networkType: SpdNetworkConfiguration;
+  iimp_kA: number; // Impulsní proud Iimp (10/350 µs) [kA]
+  in_kA: number;   // Jmenovitý výbojový proud In (8/20 µs) [kA]
+  up_kV: number;   // Ochranná napěťová hladina Up [kV]
+  uc_V: number;    // Nejvyšší trvalé provozní napětí Uc [V]
+  isCoordinatedCascade: boolean; // Dvoustupňová / třístupňová koordinace dle ČSN EN 62305-4
+  telecomSpdInstalled: boolean;  // Ochrana datových/sdělovacích linek (kategorie D1/C2)
+  telecomSpdType?: string;
+  hasFailureSignaling: boolean;  // Dálková signalizace poruchy (FM kontakt)
+  customPspd?: number;           // Manuální redukční koeficient PSPD
+}
+
+export interface SpdEvaluation {
+  isCoordinated: boolean;
+  effectivePspd: number;
+  nominalPspd: number;
+  riskReductionRatioPct: number;
+  requiredIimp_kA: number;
+  iimpAdequate: boolean;
+  protectionLevelAdequate: boolean;
+  energyCoordinationVerdict: string;
+  lpzBoundariesProtected: string[];
+  recommendations: string[];
+}
+
+export interface HeatmapZoneInfo {
+  id: string;
+  name: string;
+  zoneCode: string;
+  areaDescription: string;
+  lpzBoundary: string;
+  dominantRiskComponents: string[];
+  unmitigatedRiskPct: number;
+  mitigatedRiskPct: number;
+  status: 'safe' | 'moderate' | 'elevated' | 'critical';
+  unmitigatedStatus: 'safe' | 'moderate' | 'elevated' | 'critical';
+  color: string;
+  unmitigatedColor: string;
+  vulnerabilities: string[];
+  appliedProtections: string[];
+  recommendedMeasures: string[];
+  floorLevel: string;
+}
+
 export interface MeasuresData {
   lpsClass: LpsClass;
   spdLevel: SpdLevel;
@@ -117,6 +179,7 @@ export interface MeasuresData {
   selectedSpdArticleNumber?: string;
   selectedSpdUp_kV?: number;
   selectedSpdIimp_kA?: number;
+  spdConfig?: SpdDetailedConfig;
 }
 
 export type HviType = 'hvi_light' | 'hvi_standard' | 'hvi_power' | 'dehniso_spacer';
@@ -235,10 +298,17 @@ export interface CalculationResults {
 
   // Posouzení stínění okolními stavbami a vlnového pole
   surroundingShielding?: SurroundingShieldingEvaluation;
+
+  // Vyhodnocení svodičů bleskových proudů a přepětí (SPD) dle ČSN EN 62305-4
+  spdEvaluation?: SpdEvaluation;
+
+  // Zóny budovy pro interaktivní Risk Heatmap
+  heatmapZones?: HeatmapZoneInfo[];
 }
 
 export interface PvLpsEvaluation {
   hasPv: boolean;
+  systemType?: PvSystemType;
   effectiveHeight_m: number;
   baseAd_m2: number;
   effectiveAd_m2: number;
@@ -258,6 +328,11 @@ export interface PvLpsEvaluation {
   requiredSpdDC: 'Typ 2' | 'Typ 1+2 (Iimp ≥ 12.5 kA)' | 'Typ 1+2 (Iimp ≥ 5 kA)';
   requiredSpdAC: 'Typ 2' | 'Typ 1+2';
   fireRiskEvaluation: 'ordinary' | 'high';
+  minSpdVoltageUcpv_V: number;       // Minimální trvalé provozní napětí svodiče Ucpv ≥ 1.2 * Uoc
+  isDualSpdRequired: boolean;         // Vyžadována druhá sada SPD (délka DC kabelu > 10 m dle ČSN CLC/TS 51643-32)
+  galvanicBondingDiameterMm: string;  // Předepsaný průřez Cu (6 mm² vs 16 mm²)
+  pneStandardCompliance: string;      // Posouzení shody s podnikovou normou PNE 33 0000-8
+  recommendedSpdCatalogModel: string;// Doporučený konkrétní typ z katalogu
   verdict: string;
   recommendations: string[];
 }

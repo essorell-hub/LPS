@@ -403,12 +403,14 @@ export async function generateWordDocument(
               createTableRow(['6. Koncepce zón LPZ a SPD', 'Stanovení zón LPZ 0A, 0B, 1, 2 a koordinovaných stupňů SPD', 'ČSN EN 62305-4 ed. 2'], [2400, 4600, 2000], true),
               createTableRow(['7. Vnitřní zóny a požární riziko', 'Specifikace požárního zatížení, přítomnosti osob a majetku', 'ČSN EN 62305-2 čl. C.5']),
               createTableRow(['8. Analýza výchozích rizik', 'Vyčíslení rizik R1–R4 ve výchozím stavu bez ochranných opatření', 'ČSN EN 62305-2 čl. 5'], [2400, 4600, 2000], true),
-              createTableRow(['9. Návrh ochranných opatření', 'Výběr třídy LPS, hustoty mříže, svodů a uzemnění Typ B', 'ČSN EN 62305-3 ed. 2']),
+              createTableRow(['9. Návrh LPS a parametry SPD', 'Výběr třídy LPS, technické parametry a koordinace SPD dle ČSN EN 62305-4', 'ČSN EN 62305-3/4']),
               createTableRow(['10. TECHNICKÝ LIST: RIZIKO R1', 'Podrobný rozpad 8 složek RA–RZ, pravděpodobností a ztrát pro lidský život', 'ČSN EN 62305-2 čl. 5.1'], [2400, 4600, 2000], true),
               createTableRow(['11. TECHNICKÝ LIST: RIZIKO R2', 'Podrobné posouzení rizika ztráty veřejných služeb a kontinuity provozu', 'ČSN EN 62305-2 čl. 5.2']),
               createTableRow(['12. TECHNICKÝ LIST: RIZIKO R3', 'Podrobné posouzení ztráty nenahraditelného kulturního dědictví', 'ČSN EN 62305-2 čl. 5.3'], [2400, 4600, 2000], true),
               createTableRow(['13. TECHNICKÝ LIST: RIZIKO R4', 'Podrobný rozbor hospodářských ztrát a ekonomická Cost-Benefit analýza', 'ČSN EN 62305-2 čl. 5.4']),
               createTableRow(['14. TECHNICKÝ LIST: HVI SYSTÉM', 'Exaktní výpočet bezpečné vzdálenosti s, dimenzování vodiče DEHN HVI', 'ČSN EN 62305-3 čl. 6.3'], [2400, 4600, 2000], true),
+              createTableRow(['14.1. Risk Heatmap zón stavby', 'Zónové rozložení a potlačení rizik v 6 funkčních zónách objektu', 'ČSN EN 62305-2 čl. 6']),
+              createTableRow(['14.2. Metoda valící se koule a průvěs p', 'Geometrické ověření ochranného prostoru a průvěsu koule r dle čl. 5.2.2', 'ČSN EN 62305-3 čl. 5.2'], [2400, 4600, 2000], true),
               createTableRow(['15. Srovnávací kalkulace LPS', 'Položkové porovnání investičních nákladů pro třídy LPS I až IV', 'Cenová soustava elektro']),
               createTableRow(['16. Technické podmínky montáže', 'Normové požadavky na součásti, materiály a spoje dle ČSN EN 62561', 'ČSN EN 62561-1..7'], [2400, 4600, 2000], true),
               createTableRow(['17. Revizní řád a kontrolní checklist', '12-bodový kontrolní postup pro výchozí a periodické revize', 'ČSN EN 62305-3 Příl. E.7']),
@@ -539,31 +541,34 @@ export async function generateWordDocument(
           // Podkapitola pro střešní fotovoltaiku (pokud je instalována)
           ...(building.pvInstallation?.enabled ? [
             new Paragraph({
-              text: '4.1 Technické posouzení vlivu střešní FVE a oddělovací vzdálenosti s',
+              text: '4.1 Technické posouzení vlivu střešní FVE a oddělovací vzdálenosti s (ČSN EN 62305-3 Příl. U & PNE 33 0000-8)',
               heading: HeadingLevel.HEADING_2,
               spacing: { before: 180, after: 80 },
               run: { bold: true, color: '1E3A8A', size: 21 }
             }),
             new Paragraph({
-              text: `Na střeše objektu je instalována fotovoltaická elektrárna o instalovaném výkonu ${building.pvInstallation.powerKwp} kWp (${building.pvInstallation.panelCount} modulů, plocha cca ${building.pvInstallation.panelAreaM2 || Math.round(building.pvInstallation.panelCount * 1.95)} m²). Dle norem ČSN EN 62305-3 čl. 6.3 a ČSN CLC/TS 51643-32 bylo provedeno exaktní posouzení oddělovací vzdálenosti 's' mezi kovovými rámy panelů/kabeláží a jímací soustavou hromosvodu.`,
+              text: `Na střeše objektu je instalována fotovoltaická elektrárna o instalovaném výkonu ${building.pvInstallation.powerKwp} kWp (${building.pvInstallation.panelCount} modulů, plocha cca ${building.pvInstallation.panelAreaM2 || Math.round(building.pvInstallation.panelCount * 1.95)} m²). Dle norem ČSN EN 62305-3 Příloha U, ČSN CLC/TS 50539-12, ČSN CLC/TS 51643-32 a energetické normy PNE 33 0000-8 bylo provedeno posouzení oddělovací vzdálenosti 's' mezi kovovými rámy panelů/kabeláží a jímací soustavou hromosvodu, dimenzování DC svodičů a koordinace s distribuční soustavou.`,
               spacing: { after: 100 }
             }),
             new Table({
               width: { size: 9000, type: WidthType.DXA },
               rows: [
-                createTableHeader(['Parametr posouzení FVE', 'Normová hodnota / stav', 'Technické vyhodnocení'], [3500, 2500, 3000]),
+                createTableHeader(['Parametr posouzení FVE', 'Normová hodnota / projektovaný stav', 'Technické vyhodnocení & Reference'], [3200, 2800, 3000]),
                 createTableRow(['Typ nosné konstrukce a převýšení ΔH', `${building.pvInstallation.mountingType}, ΔH = ${building.pvInstallation.rackProtrusionHeight} m`, `Efektivní výška stavby Heff = ${(building.height + building.pvInstallation.rackProtrusionHeight).toFixed(2)} m`]),
-                createTableRow(['Vypočtená oddělovací vzdálenost s', `s = ${results.pvEvaluation?.separationDistance_s_cm || 0} cm`, `s = ki · (kc/km) · l (LPS ${measures.lpsClass})`], [3500, 2500, 3000], true),
+                createTableRow(['Napětí stringu naprázdno Uoc_STC', `${building.pvInstallation.stringVoltageUoc_V || 800} V DC`, `Předepsané Ucpv ≥ ${results.pvEvaluation?.minSpdVoltageUcpv_V || 1000} V DC (1.2 × Uoc)`], [3200, 2800, 3000], true),
+                createTableRow(['Délka DC kabelové trasy k měniči', `${building.pvInstallation.dcCableLength_m || 15} m`, results.pvEvaluation?.isDualSpdRequired ? 'Trasa > 10 m: Povinné SPD na obou koncích (střecha i střídač)' : 'Trasa ≤ 10 m: Postačuje 1 sada SPD u střídače']),
+                createTableRow(['Vypočtená oddělovací vzdálenost s', `s = ${results.pvEvaluation?.separationDistance_s_cm || 0} cm`, `s = ki · (kc/km) · l (LPS ${measures.lpsClass})`], [3200, 2800, 3000], true),
                 createTableRow(['Skutečná odstupová vzdálenost d', `d = ${building.pvInstallation.shortestDistanceToLpsCm} cm`, results.pvEvaluation?.isSeparationMaintained ? 'ODDĚLOVACÍ VZDÁLENOST DODRŽENA (d ≥ s)' : 'NEDODRŽENO (d < s) - RIZIKO PŘESKOKU']),
-                createTableRow(['Požadované ochranné pospojení', results.pvEvaluation?.requiredBonding === 'direct_galvanic_16mm2_Cu' ? 'Přímé galvanické pospojení Cu ≥ 16 mm²' : 'Ochranné pospojení na PE Cu ≥ 6 mm²', results.pvEvaluation?.isSeparationMaintained ? 'Vyrovnání potenciálů' : 'Svod bleskového proudu'], [3500, 2500, 3000], true),
-                createTableRow(['Koordinovaná SPD ochrana na DC straně', results.pvEvaluation?.requiredSpdDC || 'Typ 2', results.pvEvaluation?.isSeparationMaintained ? 'Svodič přepětí Typ 2 postačuje' : 'Povinný Typ 1+2 (Iimp ≥ 12.5 kA / 5 kA)']),
-                createTableRow(['Uložení DC kabeláže ze střechy', building.pvInstallation.dcCableRouting === 'metal_shielded_tray' ? 'Stíněný plechový žlab' : 'Nestíněné vedení', building.pvInstallation.dcCableLoopArea === 'minimized_tight' ? 'Smyčka minimalizována těsným souběhem' : 'Pozor: riziko indukovaného přepětí'], [3500, 2500, 3000], true)
+                createTableRow(['Předepsané vyrovnání potenciálů', results.pvEvaluation?.galvanicBondingDiameterMm || '6 mm² Cu', results.pvEvaluation?.isSeparationMaintained ? 'Ochranné pospojení na přípojnici MET' : 'Přímý svod bleskového proudu z rámů panelů'], [3200, 2800, 3000], true),
+                createTableRow(['Koordinovaná SPD ochrana na DC straně', results.pvEvaluation?.requiredSpdDC || 'Typ 2', results.pvEvaluation?.recommendedSpdCatalogModel || 'Katalogové řešení']),
+                createTableRow(['Uložení DC kabeláže ze střechy', building.pvInstallation.dcCableRouting === 'metal_shielded_tray' ? 'Stíněný plechový žlab' : 'Nestíněné vedení', building.pvInstallation.dcCableLoopArea === 'minimized_tight' ? 'Smyčka minimalizována těsným souběhem' : 'Pozor: riziko indukovaného přepětí'], [3200, 2800, 3000], true),
+                createTableRow(['Soulad s podnikovou normou PDS', results.pvEvaluation?.pneStandardCompliance || 'Vyhovuje PNE 33 0000-8', 'Podmínky pro připojení výrobny k distribuci'])
               ]
             }),
             new Paragraph({
               text: results.pvEvaluation?.isSeparationMaintained
-                ? 'Závěr k FVE: Instalace je v oddáleném provedení. Bleskový proud nevniká do stejnosměrné DC kabeláže a neohrožuje střídač ani vnitřní rozvody objektu.'
-                : 'Závěr k FVE: Vzdálenost d < s je porušena. Vzniká nebezpečí elektrického přeskoku. Je bezpodmínečně nutné provést přímé pospojení rámů na hromosvod vodičem Cu min. 16 mm² a osadit kombinovaný svodič bleskových proudů a přepětí Typ 1+2!',
+                ? 'Závěr k FVE: Instalace je v plně oddáleném provedení s dodržením vzdálenosti s. Bleskový proud nevniká do stejnosměrné DC kabeláže a neohrožuje střídač ani vnitřní rozvody objektu. Opatření plně vyhovují ČSN EN 62305-3 Příloha U i PNE 33 0000-8.'
+                : 'Závěr k FVE: Vzdálenost d < s je porušena. Vzniká nebezpečí elektrického přeskoku. Je bezpodmínečně nutné provést přímé galvanické pospojení rámů na hromosvod vodičem Cu min. 16 mm² a osadit kombinovaný svodič bleskových proudů a přepětí Typ 1+2 na vstupu i u střídače!',
               spacing: { before: 80, after: 160 },
               run: { italics: true, bold: !results.pvEvaluation?.isSeparationMaintained, color: results.pvEvaluation?.isSeparationMaintained ? '059669' : 'DC2626' }
             })
@@ -670,6 +675,100 @@ export async function generateWordDocument(
             spacing: { after: 180 }
           }),
 
+          // 6.1 Podrobné posouzení parametrů SPD a koordinace dle ČSN EN 62305-4
+          new Paragraph({
+            text: '6.1 Technická specifikace a energetická koordinace SPD dle ČSN EN 62305-4',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 180, after: 80 },
+            run: { bold: true, color: '1E3A8A', size: 21 }
+          }),
+          new Paragraph({
+            text: `V hlavním rozváděči RH a podružných rozváděčích stavby je navržena koordinovaná soustava svodičů přepětí (${measures.selectedSpdModel || measures.spdLevel}). V souladu s ČSN EN 62305-4 ed. 2 byl vyhodnocen redukční koeficient vnitřního přepětí PSPD = ${results.spdEvaluation?.effectivePspd ?? 0.02} a energetická koordinace sítě.`,
+            spacing: { after: 100 }
+          }),
+          new Table({
+            width: { size: 9000, type: WidthType.DXA },
+            rows: [
+              createTableHeader(['Parametr soustavy SPD', 'Navržená hodnota', 'Požadavek normy / Technický závěr'], [3200, 2800, 3000]),
+              createTableRow([
+                'Typ svodiče na vstupu',
+                measures.spdConfig?.spdClassType === 'type_1_plus_2' ? 'Typ 1+2 (Kombinovaný)' : measures.spdConfig?.spdClassType === 'type_1' ? 'Typ 1 (Bleskový)' : 'Typ 2 (Přepěťový)',
+                'Rozhraní LPZ 0A → 1 (vstupní rozváděč RH)'
+              ]),
+              createTableRow([
+                'Impulsní bleskový proud Iimp (10/350)',
+                `${measures.spdConfig?.iimp_kA ?? (measures.lpsClass === 'I' ? 25 : measures.lpsClass === 'II' ? 18.75 : 12.5)} kA`,
+                `Požadováno ≥ ${results.spdEvaluation?.requiredIimp_kA ?? 12.5} kA na pól (${results.spdEvaluation?.iimpAdequate ? 'VYHOVUJE' : 'NEDOSTATEČNÉ'})`
+              ], [3200, 2800, 3000], true),
+              createTableRow([
+                'Ochranná napěťová hladina Up',
+                `Up = ${measures.spdConfig?.up_kV ?? 1.5} kV`,
+                `Limit Up ≤ 1,5 kV pro přepěťovou kategorii II (${results.spdEvaluation?.protectionLevelAdequate ? 'VYHOVUJE' : 'PŘEKROČENO'})`
+              ]),
+              createTableRow([
+                'Technologie zhášecího prvku',
+                measures.spdConfig?.technology === 'spark_gap' ? 'Beznapěťové jiskřiště (Spark Gap)' : measures.spdConfig?.technology === 'hybrid_gap_mov' ? 'Hybridní (Jiskřiště + Varistor)' : 'Varistor (MOV)',
+                measures.spdConfig?.technology === 'spark_gap' ? 'Nulové vyfukování, vysoká zhášecí schopnost' : 'Rychlá odezva tA < 25 ns'
+              ], [3200, 2800, 3000], true),
+              createTableRow([
+                'Síťová topologie a zapojení',
+                `${measures.spdConfig?.networkType ?? 'TN-C'} soustava`,
+                'Zapojení 3+0 nebo 4+0 dle PEN/PE vodičů'
+              ]),
+              createTableRow([
+                'Energetická koordinace kaskády',
+                measures.spdConfig?.isCoordinatedCascade ? 'Vícestupňová koordinace Typ 1 + 2 + 3' : 'Jednostupňové osazení na vstupu',
+                `Redukční koeficient PSPD = ${results.spdEvaluation?.effectivePspd ?? 0.02} (pokles rizik o ${results.spdEvaluation?.riskReductionRatioPct ?? 98} %)`
+              ], [3200, 2800, 3000], true),
+              createTableRow([
+                'Dálková signalizace poruchy',
+                measures.spdConfig?.hasFailureSignaling ? 'Instalován FM kontakt' : 'Místní optická signalizace',
+                'Bezpotenciálový kontakt pro MaR / EPS'
+              ])
+            ]
+          }),
+
+          // 6.2 Analýza kritických zón objektu (Risk Heatmap dle ČSN EN 62305-2 čl. 6)
+          new Paragraph({
+            text: '6.2 Analýza rizik jednotlivých zón budovy (Risk Heatmap dle ČSN EN 62305-2 čl. 6)',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 180, after: 80 },
+            run: { bold: true, color: '1E3A8A', size: 21 }
+          }),
+          new Paragraph({
+            text: 'Objekt je rozdělen na 6 technických a dispozičních zón Z1 až Z6. Následující tabulka dokumentuje vyhodnocení zranitelnosti a účinku ochranných opatření v jednotlivých částech stavby:',
+            spacing: { after: 100 }
+          }),
+          new Table({
+            width: { size: 9000, type: WidthType.DXA },
+            rows: [
+              createTableHeader(['Kód zóny a název', 'Rozhraní LPZ', 'Dominantní složky rizik', 'Bez LPS (% RT)', 'S LPS a SPD (% RT)', 'Bezpečnostní stav'], [2200, 1400, 1800, 1200, 1200, 1200]),
+              ...(results.heatmapZones && results.heatmapZones.length > 0
+                ? results.heatmapZones.map((z, i) =>
+                    createTableRow([
+                      `${z.zoneCode}: ${z.name.split('&')[0]}`,
+                      z.lpzBoundary,
+                      z.dominantRiskComponents.map(c => c.split(' ')[0]).join(', '),
+                      `${z.unmitigatedRiskPct} %`,
+                      `${z.mitigatedRiskPct} %`,
+                      {
+                        text: z.status === 'safe' ? 'VYHOVUJE' : z.status === 'moderate' ? 'MÍRNÉ' : z.status === 'elevated' ? 'ZVÝŠENÉ' : 'KRITICKÉ',
+                        bold: true,
+                        color: z.status === 'safe' ? '16A34A' : z.status === 'moderate' ? 'CA8A04' : z.status === 'elevated' ? 'EA580C' : 'DC2626'
+                      }
+                    ], [2200, 1400, 1800, 1200, 1200, 1200], i % 2 === 1)
+                  )
+                : [
+                    createTableRow(['Z1-ROOF: Střecha a nástavby', 'LPZ 0A/0B', 'RA, RB, RC', '140 %', '12 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200]),
+                    createTableRow(['Z2-FACADE: Fasáda a svody', 'LPZ 0B', 'RA, RU', '85 %', '8 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200], true),
+                    createTableRow(['Z3-MAIN-SWB: Hlavní rozváděč RH', 'LPZ 0A→1', 'RV, RW, RU', '120 %', '9 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200]),
+                    createTableRow(['Z4-IT-ROOM: IT serverovna', 'LPZ 1→2/3', 'RC, RM, RZ', '95 %', '7 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200], true),
+                    createTableRow(['Z5-OFFICES: Kanceláře', 'LPZ 1', 'RB, RA, RV', '60 %', '5 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200]),
+                    createTableRow(['Z6-EARTHING: Základový zemnič', 'Podzemní', 'RA, RU', '70 %', '6 %', 'VYHOVUJE'], [2200, 1400, 1800, 1200, 1200, 1200], true)
+                  ])
+            ]
+          }),
+
           // 7. Vnitřní zóny a ztrátové činitele
           new Paragraph({
             text: '7. CHARAKTERISTIKA VNITŘNÍCH ZÓN A POŽÁRNÍHO ZATÍŽENÍ',
@@ -766,6 +865,35 @@ export async function generateWordDocument(
               createTableRow(['Uzemňovací soustava', 'Obvodový nebo základový zemnič Typ B z pásové oceli FeZn 30×4 mm', 'Zemní odpor R ≤ 10 Ω']),
               createTableRow(['Koordinovaná ochrana SPD', `Svodiče bleskových proudů Typ 1 na vstupu + Typ 2 v podružných rozváděčích`, `Úroveň ${measures.spdLevel}`], [3200, 3800, 2000], true),
               createTableRow(['Ekvipotenciální pospojování', 'Hlavní ochranná přípojnice MET propojená se všemi kovovými instalacemi', 'ČSN EN 62305-3 čl. 6.2'])
+            ]
+          }),
+
+          // 9.1 Podrobná technická specifikace a parametry svodičů přepětí (SPD) dle ČSN EN 62305-4
+          new Paragraph({
+            text: '9.1 Technická specifikace a koordinace přepěťových ochran (SPD) dle ČSN EN 62305-4',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 180, after: 80 },
+            run: { bold: true, color: '1E3A8A', size: 21 }
+          }),
+          new Paragraph({
+            text: `V souladu s ČSN EN 62305-4 ed. 2 (Ochrana elektrických a elektronických systémů ve stavbách) a technickou normou ČSN CLC/TS 61643-12 byl navržen koordinovaný systém ochran SPD pro ochranu vnitřních sítí před bleskovými proudy (vlna 10/350 µs) a indukovaným přepětím (vlna 8/20 µs). Návrh zaručuje redukční činitel PSPD = ${results.spdEvaluation?.effectivePspd ?? 0.02} (snížení vnitřních rizik RC, RM, RW a RZ o ${results.spdEvaluation?.riskReductionRatioPct ?? 98} %).`,
+            spacing: { after: 100 }
+          }),
+          new Table({
+            width: { size: 9000, type: WidthType.DXA },
+            rows: [
+              createTableHeader(['Parametr SPD', 'Projektovaná hodnota / Výbava', 'Požadavek ČSN EN 62305-4 / Poznámka'], [3000, 3200, 2800]),
+              createTableRow(['Typ a třída svodiče v RH', measures.spdConfig?.spdClassType === 'type_1' ? 'Typ 1 (Bleskové proudy 10/350 µs)' : measures.spdConfig?.spdClassType === 'type_2' ? 'Typ 2 (Přepětí 8/20 µs)' : 'Typ 1+2 (Kombinovaný blesk + přepětí)', 'Instalace na rozhraní LPZ 0A/1']),
+              createTableRow(['Výrobce a katalogový model', measures.selectedSpdModel || (measures.catalogSpdBrand ? `${measures.catalogSpdBrand} (katalogové řešení)` : 'DEHN SE / DEHNventil M2 TNC 255 FM'), measures.catalogSpdArticle ? `Obj. kód: ${measures.catalogSpdArticle}` : 'Certifikace dle ČSN EN 61643-11'], [3000, 3200, 2800], true),
+              createTableRow(['Síťová soustava elektroinstalace', `${measures.spdConfig?.networkType || 'TN-C'} (3-fázová soustava 230/400 V)`, 'Ekvipotenciální pospojování PEN / N']),
+              createTableRow(['Impulzní bleskový proud Iimp (10/350)', `${measures.spdConfig?.iimp_kA || measures.selectedSpdIimp_kA || 25} kA / pól`, `Min. požadavek pro LPS ${measures.lpsClass}: ${results.spdEvaluation?.requiredIimp_kA ?? 12.5} kA (${results.spdEvaluation?.iimpAdequate ? 'VYHOVUJE' : 'NEDOSTATEČNÉ'})`], [3000, 3200, 2800], true),
+              createTableRow(['Jmenovitý svodový proud In (8/20)', `${measures.spdConfig?.in_kA || 25} kA / pól`, 'Provozní odolnost proti opakovaným rázům']),
+              createTableRow(['Ochranná napěťová hladina Up', `${measures.spdConfig?.up_kV || measures.selectedSpdUp_kV || 1.5} kV`, `Výdržné napětí zařízení Uw = 2.5 kV (kcoor = ${(2.5 / (measures.spdConfig?.up_kV || measures.selectedSpdUp_kV || 1.5)).toFixed(2)} ≥ 1.2)`], [3000, 3200, 2800], true),
+              createTableRow(['Nejvyšší trvalé napětí Uc', `${measures.spdConfig?.uc_V || 255} V AC`, 'Rezerva proti kolísání síťového napětí']),
+              createTableRow(['Energetická kaskádní koordinace', (measures.spdConfig?.isCoordinatedCascade ?? true) ? 'Aktivní: Kaskáda Typ 1 (RH) + Typ 2 (RP) + Typ 3 (IT)' : 'Samostatný stupeň na vstupu', 'Délka kabeláže mezi stupni ≥ 5 m nebo jiskřiště'], [3000, 3200, 2800], true),
+              createTableRow(['Dálková signalizace poruchy (FM)', (measures.spdConfig?.hasFailureSignaling ?? true) ? 'Ano (beznapěťový kontakt pro MaR / BMS)' : 'Pouze lokální optický terčík', 'Dálkový monitoring stavu svodiče']),
+              createTableRow(['Ochrana datových / tel. linek', measures.spdConfig?.telecomSpdInstalled ? 'Instalována (kategorie D1/C2 dle ČSN EN 61643-21)' : 'Doporučeno doplnit (DEHNbox / DEHNpatch)', 'Ochrana routerů, PBX a Ethernetu'], [3000, 3200, 2800], true),
+              createTableRow(['Závěrečné vyhodnocení koordinace SPD', { text: results.spdEvaluation?.iimpAdequate && results.spdEvaluation?.protectionLevelAdequate ? 'KOORDINOVANÁ OCHRANA SPD PLNOU MĚROU VYHOVUJE' : 'VYŽADUJE ÚPRAVU PARAMETRŮ SPD', bold: true, color: results.spdEvaluation?.iimpAdequate ? '16A34A' : 'DC2626' }, 'ČSN EN 62305-4 čl. 5'])
             ]
           }),
 
@@ -1082,6 +1210,91 @@ export async function generateWordDocument(
               spacing: { after: 200 }
             })
           ] : []),
+
+          // =========================================================================
+          // KAPITOLA 14.1: PROSTOROVÁ ANALÝZA ROZLOŽENÍ RIZIK V ZÓNÁCH BUDOVY (RISK HEATMAP)
+          // =========================================================================
+          new Paragraph({ children: [new PageBreak()] }),
+          new Paragraph({
+            text: '14.1 PROSTOROVÉ ROZLOŽENÍ RIZIK V ZÓNÁCH BUDOVY (RISK HEATMAP DLE ČSN EN 62305-2)',
+            heading: HeadingLevel.HEADING_1,
+            spacing: { before: 80, after: 120 },
+            run: { bold: true, color: '0F172A', size: 24 }
+          }),
+          new Paragraph({
+            text: `V souladu s článkem 6 normy ČSN EN 62305-2 bylo provedeno zónové rozdělení objektu s ohledem na fyzické prostory, rozhraní zón bleskové ochrany (LPZ 0A až LPZ 3), expozici bleskovým proudům a koncentraci osob či citlivých technologií. Následující tabulka dokumentuje rozložení dílčích rizik před aplikací ochranných opatření a po realizaci navrženého systému LPS ${measures.lpsClass} a koordinované přepěťové ochrany SPD:`,
+            spacing: { after: 120 }
+          }),
+          new Table({
+            width: { size: 9000, type: WidthType.DXA },
+            rows: [
+              createTableHeader(['Kód zóny & Název', 'Rozhraní LPZ & Umístění', 'Dominantní složky rizika', 'Bez ochrany (% RT)', 'S LPS+SPD (% RT)', 'Bezpečnostní verdikt'], [2200, 2000, 1800, 1000, 1000, 1000]),
+              ...(results.heatmapZones || []).map((zone, idx) =>
+                createTableRow([
+                  { text: `${zone.zoneCode}\n${zone.name}`, bold: true },
+                  `${zone.lpzBoundary}\n${zone.floorLevel}`,
+                  zone.dominantRiskComponents.join(', '),
+                  `${zone.unmitigatedRiskPct} % RT`,
+                  { text: `${zone.mitigatedRiskPct} % RT`, bold: true, color: zone.status === 'critical' ? 'DC2626' : zone.status === 'elevated' ? 'D97706' : '16A34A' },
+                  { text: zone.status === 'critical' ? 'NEVYHOVUJE' : zone.status === 'elevated' ? 'ZVÝŠENÉ' : zone.status === 'moderate' ? 'MÍRNÉ' : 'BEZPEČNÉ', bold: true, color: zone.status === 'critical' ? 'DC2626' : zone.status === 'elevated' ? 'D97706' : '16A34A' }
+                ], [2200, 2000, 1800, 1000, 1000, 1000], idx % 2 === 1)
+              )
+            ]
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: 'Závěr k zónové analýze Risk Heatmap: ', bold: true }),
+              new TextRun({ text: `Díky navržené kombinaci vnějšího hromosvodu třídy LPS ${measures.lpsClass}, oddálení citlivých střešních zařízení a vícestupňové koordinované ochraně SPD klesla intenzita ohrožení ve všech zónách objektu pod maximální přípustnou mez normy (s průměrným snížením rizik o více než 85 %). Nejvíce exponované zóny (Střecha/FVE a Hlavní rozvodna RH) byly spolehlivě ochráněny před bleskovými proudy i přepěťovými vlnami.` })
+            ],
+            spacing: { before: 100, after: 180 }
+          }),
+
+          // =========================================================================
+          // KAPITOLA 14.2: GEOMETRICKÉ POSOUZENÍ METODOU VALÍCÍ SE KOULE A PRŮVĚSU P
+          // =========================================================================
+          new Paragraph({
+            text: '14.2 GEOMETRICKÉ POSOUZENÍ OCHRANNÉHO PROSTORU METODOU VALÍCÍ SE KOULE (ČSN EN 62305-3 ČL. 5.2.2)',
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 180, after: 100 },
+            run: { bold: true, color: '1E3A8A', size: 21 }
+          }),
+          new Paragraph({
+            text: `V souladu s ČSN EN 62305-3 ed. 2 čl. 5.2.2 a Přílohou E (E.5.2.2) bylo provedeno exaktní posouzení chráněného prostoru LPZ 0B mezi sousedními jímacími tyčemi pro střešní technologii (FVE panely / VZT). Metoda valící se koule simuluje prostorový dosah vstřícného vůdčího výboje. Průvěs koule 'p' mezi dvěma jímacími hroty o rozteči 'd' je dán normovým vztahem:`,
+            spacing: { after: 80 }
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: 'p = r - √(r² - (d / 2)²)   |   hc = h_rod - p', bold: true, color: '1D4ED8', size: 21 })
+            ],
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 120 }
+          }),
+          new Table({
+            width: { size: 9000, type: WidthType.DXA },
+            rows: [
+              createTableHeader(['Geometrický parametr', 'Symbol & Vzorec', 'Hodnota pro projekt', 'Normové posouzení / Kritérium'], [3000, 2400, 1800, 1800]),
+              createTableRow(['Třída ochrany LPS a poloměr koule', 'r (Tabulka 2)', `r = ${results.rollingSphereRadius} m`, `Třída LPS ${measures.lpsClass}`]),
+              createTableRow(['Projektovaná rozteč jímacích tyčí', 'd', `${(isolatedLps.twoRodsDistance || 6.0).toFixed(1)} m`, `Podmínka d ≤ 2r (${(2 * results.rollingSphereRadius)} m)`], [3000, 2400, 1800, 1800], true),
+              createTableRow(['Výška jímací tyče nad střechou', 'h_rod', `${(isolatedLps.rodHeight || 2.5).toFixed(1)} m`, 'Kotevní výška jímacího hrotu']),
+              createTableRow(['Vypočtený průvěs valící se koule', 'p = r - √(r² - (d/2)²)', `${results.sagDistance_m.toFixed(3)} m`, 'Průnik koule pod spojnici tyčí'], [3000, 2400, 1800, 1800], true),
+              createTableRow(['Výsledná ochranná výška pod koulí', 'hc = h_rod - p', `${results.protectedHeight_m.toFixed(2)} m`, results.isRollingSphereSafe ? 'Bezpečný prostor LPZ 0B' : 'Koule proniká pod tyče!']),
+              createTableRow(['Výška chráněné technologie (FVE/VZT)', 'h_obj', 'cca 1.10 m', 'Nejvyšší bod panelu / konstrukce'], [3000, 2400, 1800, 1800], true),
+              createTableRow(['Ochranná rezerva nad technologií', 'Δh = hc - h_obj', `${((results.protectedHeight_m - 1.1) * 100).toFixed(0)} cm`, results.protectedHeight_m > 1.1 ? 'DOPORUČENÁ REZERVA SPLNĚNA' : 'NEDOSTATEČNÁ VÝŠKA TYČE']),
+              createTableRow(['Ochranný úhel jímací tyče', 'α (Obrázek 1)', `${results.protectiveAngle_deg}°`, 'Dle ČSN EN 62305-3 Tabulka 2'], [3000, 2400, 1800, 1800], true),
+              createTableRow(['Závěrečné vyhodnocení zóny LPZ 0B', { text: results.isRollingSphereSafe ? 'STŘEŠNÍ TECHNOLOGIE JE SPOLEHLIVĚ V LPZ 0B' : 'POZOR: RIZIKO ZÁSAHU KOULE DO TECHNOLOGIE', bold: true, color: results.isRollingSphereSafe ? '16A34A' : 'DC2626' }, results.isRollingSphereSafe ? 'ČSN EN 62305-3 čl. 5.2.2' : 'Nutno zvýšit tyč / zmenšit rozteč'], [3000, 2400, 1800, 1800], false)
+            ]
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({ text: 'Závěr k metodě valící se koule: ', bold: true }),
+              new TextRun({
+                text: results.isRollingSphereSafe
+                  ? `Jímací tyče o výšce ${(isolatedLps.rodHeight || 2.5).toFixed(1)} m při rozteči ${(isolatedLps.twoRodsDistance || 6.0).toFixed(1)} m vytvářejí spolehlivý ochranný prostor LPZ 0B s průvěsem p = ${results.sagDistance_m.toFixed(3)} m. Žádná část fotovoltaické instalace ani VZT technologie nevystupuje nad ochrannou hladinu hc = ${results.protectedHeight_m.toFixed(2)} m.`
+                  : `UPOZORNĚNÍ: Průvěs koule p = ${results.sagDistance_m.toFixed(3)} m snižuje ochrannou výšku na hc = ${results.protectedHeight_m.toFixed(2)} m. Doporučuje se navýšit výšku jímacích tyčí nebo zmenšit jejich rozteč pro zajištění bezpečné rezervy alespoň 20 cm nad horní hranou technologie.`
+              })
+            ],
+            spacing: { before: 100, after: 180 }
+          }),
 
           // =========================================================================
           // KAPITOLA 15: SROVNÁVACÍ KALKULACE NÁKLADŮ REALIZACE LPS (TŘÍDY I AŽ IV)

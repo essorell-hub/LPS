@@ -8,6 +8,7 @@ import {
   createDocumentLogoCanvas
 } from '../utils/diagramGenerators';
 import { calculateComparativeCosts } from '../utils/costCalculation';
+import { BuildingRiskHeatmap } from './BuildingRiskHeatmap';
 import {
   ResponsiveContainer,
   BarChart,
@@ -76,7 +77,7 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
   onOpenStandardsSearch
 }) => {
   const { meta, measures, isolatedLps, building, zone, lines } = project;
-  const [chartView, setChartView] = useState<'dehn' | 'radar' | 'ratio' | 'comparison' | 'components'>('dehn');
+  const [chartView, setChartView] = useState<'dehn' | 'heatmap' | 'radar' | 'ratio' | 'comparison' | 'components'>('dehn');
 
   // Výchozí rizika bez ochranných opatření
   const initialR1 = results.componentsInitial.RA + results.componentsInitial.RB + results.componentsInitial.RC + results.componentsInitial.RM + results.componentsInitial.RU + results.componentsInitial.RV + results.componentsInitial.RW + results.componentsInitial.RZ;
@@ -707,6 +708,11 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
         )}
       </div>
 
+      {/* ============================================================ */}
+      {/* INTERAKTIVNÍ PRVEK RISK HEATMAP: PROSTOROVÉ ZÓNY BUDOVY      */}
+      {/* ============================================================ */}
+      <BuildingRiskHeatmap project={project} results={results} />
+
       {/* Recharts Vizualizace výsledků výpočtu rizik (R1 - R4) */}
       <div className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-800">
@@ -733,6 +739,18 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
             >
               <BarChart3 className="w-3.5 h-3.5 text-blue-300" />
               Srovnání R1–R4 (DEHN)
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartView('heatmap')}
+              className={`px-3 py-1.5 font-medium rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
+                chartView === 'heatmap'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-rose-300" />
+              Risk Heatmap
             </button>
             <button
               type="button"
@@ -915,6 +933,11 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* Interaktivní prostorová Risk Heatmap budovy */}
+        {chartView === 'heatmap' && (
+          <BuildingRiskHeatmap project={project} results={results} />
         )}
 
         {/* Radarový pavučinový graf celkového stavu zabezpečení budovy */}
@@ -2070,6 +2093,40 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
             </div>
           )}
 
+          {/* 5a. Posouzení střešní fotovoltaické instalace FVE (ČSN EN 62305-3 Příloha U) */}
+          {building.pvInstallation?.enabled && (
+            <div className="border border-amber-300 bg-amber-50/70 p-4 rounded-lg space-y-2">
+              <div className="flex justify-between items-center border-b border-amber-300 pb-1">
+                <span className="font-bold text-xs uppercase text-amber-950">
+                  5a. STŘEŠNÍ FVE INSTALACE, DC ROZVODY A POSPOJENÍ (ČSN EN 62305-3 PŘÍL. U & PNE 33 0000-8)
+                </span>
+                <span className="font-mono text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold">
+                  CLC/TS 50539-12
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-800">
+                Instalovaný výkon: <strong>{building.pvInstallation.powerKwp} kWp</strong> ({building.pvInstallation.panelCount} panelů, {building.pvInstallation.mountingType}).
+                Délka DC vedení: <strong>{building.pvInstallation.dcCableLength_m || 15} m</strong>.
+                Napětí stringu: <strong>Uoc = {building.pvInstallation.stringVoltageUoc_V || 800} V DC</strong>.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono bg-white p-2.5 rounded border border-amber-200">
+                <div>Oddělovací vzdálenost: <strong>s = {results.pvEvaluation?.separationDistance_s_cm} cm</strong></div>
+                <div>Skutečný odstup: <strong>d = {building.pvInstallation.shortestDistanceToLpsCm} cm</strong></div>
+                <div>Minimální mez SPD: <strong>Ucpv ≥ {results.pvEvaluation?.minSpdVoltageUcpv_V} V</strong></div>
+                <div>Pospojení konstrukce: <strong>{results.pvEvaluation?.galvanicBondingDiameterMm}</strong></div>
+              </div>
+              <div className="text-[11px] font-medium text-slate-800">
+                • Doporučený DC svodič: <span className="font-bold text-blue-900">{results.pvEvaluation?.recommendedSpdCatalogModel}</span>
+              </div>
+              <div className={`text-[11px] font-semibold ${results.pvEvaluation?.isSeparationMaintained ? 'text-emerald-700' : 'text-rose-700'}`}>
+                • Stav: {results.pvEvaluation?.verdict}
+              </div>
+              <div className="text-[10px] text-slate-600 italic">
+                • Shoda s PNE: {results.pvEvaluation?.pneStandardCompliance}
+              </div>
+            </div>
+          )}
+
           {/* 5b. Metoda valící se koule a ochranný úhel */}
           <div className="border border-slate-200 bg-slate-50 p-4 rounded-lg space-y-2">
             <div className="flex justify-between items-center border-b border-slate-200 pb-1">
@@ -2106,6 +2163,67 @@ export const Step6SummaryDocx: React.FC<Step6SummaryDocxProps> = ({
             </div>
             <div className={`text-[11px] font-semibold ${results.isEarthingSafe ? 'text-emerald-700' : 'text-amber-700'}`}>
               • Posouzení: {results.isEarthingSafe ? 'Uzemňovací soustava vyhovuje požadavkům ČSN EN 62305-3 na minimální délku a impedanci pod 10 Ω.' : 'Doporučeno doplnit svislé tyčové zemniče pro snížení přechodového odporu pod 10 Ω.'}
+            </div>
+          </div>
+
+          {/* 5d. Koordinace přepěťových ochran (SPD) dle ČSN EN 62305-4 */}
+          <div className="border border-amber-200 bg-amber-50/60 p-4 rounded-lg space-y-2">
+            <div className="flex justify-between items-center border-b border-amber-200 pb-1">
+              <span className="font-bold text-xs uppercase text-amber-950">5d. KOORDINACE PŘEPĚŤOVÝCH OCHRAN (SPD) DLE ČSN EN 62305-4</span>
+              <span className="font-mono text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold">ČSN EN 62305-4 čl. 5</span>
+            </div>
+            <p className="text-[11px] text-slate-800">
+              Přístroj: <strong>{measures.selectedSpdModel || (measures.spdLevel !== 'none' ? `Koordinované SPD ${measures.spdLevel}` : 'Bez koordinovaného SPD')}</strong>. Síť: <strong>{measures.spdConfig?.networkType || 'TN-C'}</strong>.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono bg-white p-2.5 rounded border border-amber-200">
+              <div>Typ: <strong>{measures.spdConfig?.spdClassType === 'type_1_plus_2' ? 'Typ 1+2' : 'Typ 1'}</strong></div>
+              <div>Bleskový proud Iimp: <strong>{measures.spdConfig?.iimp_kA ?? 12.5} kA</strong> ({results.spdEvaluation?.iimpAdequate ? '✓ Vyhovuje' : '⚠ Nedostatečné'})</div>
+              <div>Ochranná mez Up: <strong>{measures.spdConfig?.up_kV ?? 1.5} kV</strong> ({results.spdEvaluation?.protectionLevelAdequate ? '✓ Up ≤ 1,5 kV' : '⚠ Up > 1,5 kV'})</div>
+              <div>Redukční faktor: <strong>PSPD = {results.spdEvaluation?.effectivePspd ?? 0.02}</strong></div>
+            </div>
+            <div className="text-[11px] text-slate-700 italic">
+              • Verdikt: {results.spdEvaluation?.energyCoordinationVerdict}
+            </div>
+          </div>
+
+          {/* 5e. Prostorové vyhodnocení zón budovy (Risk Heatmap) */}
+          <div className="border border-indigo-200 bg-indigo-50/60 p-4 rounded-lg space-y-2">
+            <div className="flex justify-between items-center border-b border-indigo-200 pb-1">
+              <span className="font-bold text-xs uppercase text-indigo-950">5e. PROSTOROVÁ ZONACE STAVBY (RISK HEATMAP ZÓN Z1 AŽ Z6)</span>
+              <span className="font-mono text-[10px] bg-indigo-200 text-indigo-900 px-2 py-0.5 rounded font-bold">ČSN EN 62305-2 čl. 6</span>
+            </div>
+            <p className="text-[11px] text-slate-800">
+              Rozdělení stavby na zóny s odstupňovanou intenzitou nebezpečí a vlivem navržených ochranných opatření:
+            </p>
+            <div className="overflow-x-auto bg-white rounded border border-indigo-200">
+              <table className="w-full text-[10px] font-mono border-collapse">
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>
+                    <th className="p-1.5 text-left border-b">Zóna</th>
+                    <th className="p-1.5 text-left border-b">Rozhraní LPZ</th>
+                    <th className="p-1.5 text-center border-b">Bez LPS</th>
+                    <th className="p-1.5 text-center border-b">S LPS+SPD</th>
+                    <th className="p-1.5 text-center border-b">Stav</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {(results.heatmapZones || []).map((z) => (
+                    <tr key={z.id}>
+                      <td className="p-1.5 font-medium">{z.zoneCode}: {z.name.split('&')[0]}</td>
+                      <td className="p-1.5 text-slate-600">{z.lpzBoundary}</td>
+                      <td className="p-1.5 text-center text-rose-700 font-bold">{z.unmitigatedRiskPct} %</td>
+                      <td className="p-1.5 text-center text-emerald-700 font-bold">{z.mitigatedRiskPct} %</td>
+                      <td className="p-1.5 text-center font-bold">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] ${
+                          z.status === 'safe' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {z.status === 'safe' ? 'VYHOVUJE' : 'POZOR'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

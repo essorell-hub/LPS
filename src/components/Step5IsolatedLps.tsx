@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { RoofLayoutEditor } from './RoofLayoutEditor';
 import { HviVisualizerGallery } from './HviVisualizerGallery';
+import { RollingSphereSagVisualizer } from './RollingSphereSagVisualizer';
 
 interface Step5IsolatedLpsProps {
   isolatedLps: IsolatedLpsData;
@@ -37,7 +38,7 @@ export const Step5IsolatedLps: React.FC<Step5IsolatedLpsProps> = ({
   buildingWidth = 10,
   onUpdateIsolatedLps
 }) => {
-  const [activeTab, setActiveTab] = useState<'visualizer' | 'calculator' | 'layout2d'>('visualizer');
+  const [activeTab, setActiveTab] = useState<'visualizer' | 'calculator' | 'rollingSphere' | 'layout2d'>('calculator');
 
   const hviSpecs: Record<HviType, { name: string; airLimit: number; solidLimit: number; desc: string }> = {
     hvi_light: {
@@ -138,9 +139,25 @@ export const Step5IsolatedLps: React.FC<Step5IsolatedLpsProps> = ({
           }`}
         >
           <Calculator className="w-4 h-4 text-blue-300" />
-          <span>Matematický kalkulátor (s) & Koule</span>
+          <span>Matematický kalkulátor (s)</span>
           <span className="font-mono text-[10px] text-slate-300">
             {results.separationDistance_s_cm} cm
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('rollingSphere')}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'rollingSphere'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30 font-bold'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Compass className="w-4 h-4 text-cyan-300" />
+          <span>Řez valící se koulí & Průvěs p</span>
+          <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-[10px] text-cyan-300 font-mono">
+            r = {results.rollingSphereRadius} m
           </span>
         </button>
 
@@ -418,61 +435,21 @@ export const Step5IsolatedLps: React.FC<Step5IsolatedLpsProps> = ({
               </div>
             </div>
 
-            {/* Metoda valící se koule a ochranného úhlu */}
+            {/* Metoda valící se koule a ochranného úhlu s interaktivním řezem */}
             <div className="p-6 rounded-xl bg-slate-900 border border-slate-800 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-4 pb-3 border-b border-slate-800">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-                    <Compass className="w-4 h-4 text-blue-400" />
-                    Metoda valící se koule a ochranného úhlu (ČSN EN 62305-3 ed. 2)
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Ověření chráněného prostoru pro střešní FVE panely a technologie mezi jímacími tyčemi.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs px-2.5 py-1 rounded bg-blue-950 border border-blue-800 text-blue-300 font-mono font-bold">
-                    Koule r = {results.rollingSphereRadius} m (LPS {currentLpsClass})
-                  </span>
-                  <span className="text-xs px-2.5 py-1 rounded bg-amber-950 border border-amber-800 text-amber-300 font-mono font-bold">
-                    Úhel α = {results.protectiveAngle_deg}°
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
-                <div className="p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/60 space-y-1.5">
-                  <span className="text-slate-400 font-sans block">Rozteč mezi tyčemi d [m]:</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    step="0.5"
-                    value={isolatedLps.twoRodsDistance || 6.0}
-                    onChange={(e) => onUpdateIsolatedLps({ twoRodsDistance: Math.max(1, Number(e.target.value)) })}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded text-white text-sm"
-                  />
-                  <span className="text-[10px] text-slate-500 font-sans block">Vzdálenost sousedních jímacích tyčí na střeše.</span>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/60 space-y-1.5">
-                  <span className="text-slate-400 font-sans block">Průvěs koule p [m]:</span>
-                  <div className="text-lg font-bold text-blue-300 pt-1">
-                    p = {results.sagDistance_m.toFixed(3)} m
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-sans block">p = r - √(r² - (d/2)²) dle čl. 5.2.2.</span>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-slate-800/60 border border-slate-700/60 space-y-1.5">
-                  <span className="text-slate-400 font-sans block">Chráněná výška hc [m]:</span>
-                  <div className={`text-lg font-bold pt-1 ${results.isRollingSphereSafe ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    hc = {results.protectedHeight_m.toFixed(2)} m
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-sans block">
-                    {results.isRollingSphereSafe ? 'Vyhovuje: technologie je bezpečně pod koulí.' : 'Pozor: nutno zvýšit tyč nebo zmenšit rozteč!'}
-                  </span>
-                </div>
-              </div>
+              <RollingSphereSagVisualizer
+                lpsClass={currentLpsClass}
+                twoRodsDistance={isolatedLps.twoRodsDistance || 6.0}
+                rodHeight={isolatedLps.rodHeight || 2.5}
+                objectHeight={1.1}
+                objectType="pv_panel"
+                onUpdateParams={({ twoRodsDistance, rodHeight }) => {
+                  const patch: Partial<IsolatedLpsData> = {};
+                  if (twoRodsDistance !== undefined) patch.twoRodsDistance = twoRodsDistance;
+                  if (rodHeight !== undefined) patch.rodHeight = rodHeight;
+                  onUpdateIsolatedLps(patch);
+                }}
+              />
             </div>
           </div>
         ) : (
@@ -492,6 +469,25 @@ export const Step5IsolatedLps: React.FC<Step5IsolatedLpsProps> = ({
             </button>
           </div>
         )
+      )}
+
+      {/* 2. TAB: DEDIKOVANÝ ŘEZ VALÍCÍ SE KOULÍ */}
+      {activeTab === 'rollingSphere' && (
+        <div className="space-y-6 animate-in fade-in">
+          <RollingSphereSagVisualizer
+            lpsClass={currentLpsClass}
+            twoRodsDistance={isolatedLps.twoRodsDistance || 6.0}
+            rodHeight={isolatedLps.rodHeight || 2.5}
+            objectHeight={1.1}
+            objectType="pv_panel"
+            onUpdateParams={({ twoRodsDistance, rodHeight }) => {
+              const patch: Partial<IsolatedLpsData> = {};
+              if (twoRodsDistance !== undefined) patch.twoRodsDistance = twoRodsDistance;
+              if (rodHeight !== undefined) patch.rodHeight = rodHeight;
+              onUpdateIsolatedLps(patch);
+            }}
+          />
+        </div>
       )}
 
       {/* 3. TAB: 2D PŮDORYSNÝ EDITOR STŘECHY */}
